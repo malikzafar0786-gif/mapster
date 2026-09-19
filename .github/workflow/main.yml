@@ -1,0 +1,61 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Android project
+        run: flutter create --org com.example --project-name map_overlay --platforms=android map_overlay
+
+      - name: Copy app code
+        run: |
+          SRC=$(find . -path ./map_overlay -prune -o -path '*/lib/main.dart' -print | head -n 1)
+          if [ -z "$SRC" ]; then
+            echo "lib/main.dart was not found in the repository. Upload it to lib/main.dart."
+            exit 1
+          fi
+          echo "Using $SRC"
+          cp "$SRC" map_overlay/lib/main.dart
+
+      - name: Add packages
+        working-directory: map_overlay
+        run: flutter pub add flutter_map latlong2 file_picker pdfx image archive path_provider open_filex geolocator
+
+      - name: Add Internet and Location permissions
+        working-directory: map_overlay
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if ! grep -q ACCESS_FINE_LOCATION "$MANIFEST"; then
+            perl -0pi -e 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n    <application#' "$MANIFEST"
+          fi
+          cat "$MANIFEST"
+
+      - name: Build APK
+        working-directory: map_overlay
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: map-overlay-apk
+          path: map_overlay/build/app/outputs/flutter-apk/app-release.apk
